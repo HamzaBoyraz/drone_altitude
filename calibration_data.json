@@ -1,0 +1,20 @@
+[
+    {
+        "id": 1,
+        "cx_px": 317.0,
+        "cy_px": 241.0,
+        "area_px": 96693.0,
+        "real_x_mm": 0.0,
+        "real_y_mm": 0.0,
+        "real_z_mm": 350.0
+    },
+    {
+        "id": 2,
+        "cx_px": 326.0,
+        "cy_px": 246.0,
+        "area_px": 64846.0,
+        "real_x_mm": 0.0,
+        "real_y_mm": 0.0,
+        "real_z_mm": 600.0
+    }
+]

@@ -1,0 +1,12 @@
+# OpenCV 3D Object Tracker & Spatial Estimator
+
+A Python and OpenCV application that tracks colored objects in real-time, calculates 2D pixel area and centroids, and estimates real-world 3D coordinates (X, Y, Z) using multi-variable regression and a Kalman Filter.
+
+## Features
+- Real-time HSV color thresholding with trackbars
+- Circularity-based contour selection
+- Multi-variable non-linear 3D spatial estimation (X, Y, Z in mm)
+- 6D Kalman Filter trajectory smoothing
+- Error evaluation tool (MAE / RMSE)
+
+## Setup
