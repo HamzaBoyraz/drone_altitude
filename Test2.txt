@@ -1,0 +1,151 @@
+% test_generateA429.m
+% Updated test script for generateA429FromMsgArray function
+
+clear; clc;
+
+% 1. Create temporary output directory
+testOutputDir = fullfile(pwd, 'test_output_dir');
+if ~exist(testOutputDir, 'dir')
+    mkdir(testOutputDir);
+end
+
+fprintf('1. Constructing test A429Message objects...\n');
+
+% =========================================================================
+% Message 1: Input message using Int16 data type
+% 19-bit allocation: Bits 1..14 (PitchAngle), Bits 15..19 (pad1)
+% =========================================================================
+msg1 = A429Message();
+msg1.ioType = 'input';
+msg1.msgName = 'PitchAngleMsg';
+msg1.label1 = '1';
+msg1.label2 = '0';
+msg1.label3 = '2';                           % Label 102 OCTAL
+msg1.sdiDefault = 'INSTALLATION_NUMBER_ALL';  % SDI format
+msg1.ssmDefault = 'NORMAL_OPERATION';        % SSM value
+
+msg1.data = cell(1, 2);
+
+% Field 1: Signed Int16 pitch angle (14 bits, 1 to 14)
+msg1.data{1} = createDataField('PitchAngle', 'Int16', 1, 14, '0.01');
+
+% Field 2: Padding field (5 bits, 15 to 19) -> Will be skipped by generator
+msg1.data{2} = createDataField('pad1', 'Uint8', 15, 5, '1');
+
+
+% =========================================================================
+% Message 2: Output message using Float32 data type and ',' decimal separator
+% 19-bit allocation: Bits 1..12 (RollRate), Bits 13..19 (pad2)
+% =========================================================================
+msg2 = A429Message();
+msg2.ioType = 'output';
+msg2.msgName = 'RollRateMsg';
+msg2.label1 = 2;
+msg2.label2 = 0;
+msg2.label3 = 4;                           % Label 204 OCTAL
+msg2.sdiDefault = 'INSTALLATION_NUMBER_ONE';
+msg2.ssmDefault = 'NO_COMPUTED_DATA';
+
+msg2.data = cell(1, 2);
+
+% Field 1: Float32 Roll rate (12 bits, 1 to 12) with comma in resolution
+msg2.data{1} = createDataField('RollRate', 'Float32', 1, 12, '0,05');
+
+% Field 2: Padding field (7 bits, 13 to 19)
+msg2.data{2} = createDataField('pad2', 'Uint8', 13, 7, '1');
+
+
+% =========================================================================
+% Message 3: Bi-directional message with multiple fields (Uint16, Int8)
+% 19-bit allocation: Bits 1..10 (Airspeed), Bits 11..18 (Temp), Bit 19 (pad1)
+% =========================================================================
+msg3 = A429Message();
+msg3.ioType = 'both';
+msg3.msgName = 'AirspeedAndTempMsg';
+msg3.label1 = '3';
+msg3.label2 = '1';
+msg3.label3 = '0';                           % Label 310 OCTAL
+msg3.sdiDefault = 'INSTALLATION_NUMBER_TWO';
+msg3.ssmDefault = 'FAILURE_WARNING';
+
+msg3.data = cell(1, 3);
+
+% Field 1: Unsigned Uint16 Airspeed (10 bits, 1 to 10)
+msg3.data{1} = createDataField('AirspeedVal', 'Uint16', 1, 10, '0.1');
+
+% Field 2: Signed Int8 Temperature (8 bits, 11 to 18)
+msg3.data{2} = createDataField('Temperature', 'Int8', 11, 8, '1');
+
+% Field 3: Padding field (1 bit, 19 to 19)
+msg3.data{3} = createDataField('pad1', 'Uint8', 19, 1, '1');
+
+
+% =========================================================================
+% Message 4: Full 19-bit message using Double64 without padding
+% 19-bit allocation: Bits 1..19 (Altitude)
+% =========================================================================
+msg4 = A429Message();
+msg4.ioType = 'input';
+msg4.msgName = 'AltitudeMsg';
+msg4.label1 = 0;
+msg4.label2 = 2;
+msg4.label3 = 7;                           % Label 027 OCTAL
+msg4.sdiDefault = 'INSTALLATION_NUMBER_THREE';
+msg4.ssmDefault = 'FUNCTIONAL_TEST';
+
+msg4.data = cell(1, 1);
+
+% Field 1: Double64 Altitude taking all 19 bits (1 to 19)
+msg4.data{1} = createDataField('BaroAltitude', 'Double64', 1, 19, '0.5');
+
+
+% -------------------------------------------------------------------------
+% Run Test Execution
+% -------------------------------------------------------------------------
+msgArray = [msg1, msg2, msg3, msg4];
+
+fprintf('2. Executing generateA429FromMsgArray...\n');
+
+try
+    generateA429FromMsgArray(msgArray, testOutputDir);
+    fprintf('\n[SUCCESS] Test execution completed successfully.\n');
+catch ME
+    fprintf('\n[FAILURE] Test execution failed:\n');
+    rethrow(ME);
+end
+
+
+% =========================================================================
+% Local Helper Function: Constructs data field struct & calculates min/max
+% =========================================================================
+function f = createDataField(name, dtype, startBit, bitSize, resInput)
+    % Parse resolution input (handles numeric or string with ',' or '.')
+    if ischar(resInput) || isstring(resInput)
+        resStr = char(resInput);
+        resNum = str2double(strrep(resStr, ',', '.'));
+    else
+        resNum = resInput;
+        resStr = num2str(resInput);
+    end
+
+    % Calculate min and max based on bit width (bitSize) and resolution
+    if startsWith(dtype, 'Uint', 'IgnoreCase', true)
+        % Unsigned range: [0, (2^N - 1) * resolution]
+        minVal = 0;
+        maxVal = (2^bitSize - 1) * resNum;
+    else
+        % Signed range: [-2^(N-1) * resolution, (2^(N-1) - 1) * resolution]
+        minVal = -(2^(bitSize - 1)) * resNum;
+        maxVal = (2^(bitSize - 1) - 1) * resNum;
+    end
+
+    f = struct();
+    f.name       = name;
+    f.dtype      = dtype;      % Int8, Int16, Int32, Uint8, Uint16, Uint32, Float32, Double64
+    f.startBit   = startBit;   % 1 to 19
+    f.size       = bitSize;    % bit width (startBit + size - 1 <= 19)
+    f.resolution = resStr;
+    f.unit       = '';
+    f.min        = minVal;
+    f.max        = maxVal;
+end
