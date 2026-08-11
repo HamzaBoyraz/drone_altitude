@@ -1,0 +1,170 @@
+function generateA429FromMsgArray(msgArray, targetDir)
+    % Interface function to instantiate A429SrcFilesGenerator blocks from 
+    % "Arinc 429 Library", populate mask parameters from A429Message objects,
+    % and execute the model.
+
+    if nargin < 2 || isempty(targetDir)
+        targetDir = pwd;
+    end
+
+    libraryName = 'Arinc 429 Library'; % Exact library system name
+    blockInLib  = [libraryName, '/A429SrcFilesGenerator'];
+    modelName   = 'temp_a429_gen_model';
+
+    % 1. Ensure library is loaded into memory
+    if ~bdIsLoaded(libraryName)
+        load_system(libraryName);
+    end
+
+    % 2. Create a clean temporary Simulink model
+    if bdIsLoaded(modelName)
+        close_system(modelName, 0);
+    end
+    new_system(modelName);
+    open_system(modelName);
+
+    try
+        % 3. Iterate through array of A429Message objects
+        for i = 1:numel(msgArray)
+            msg = msgArray(i);
+            blockName = sprintf('A429SrcGenerator_%d', i);
+            blockPath = [modelName, '/', blockName];
+
+            % Copy masked block directly from library
+            add_block(blockInLib, blockPath, 'Position', [100, i*120, 300, i*120 + 80]);
+
+            % 4. Set generateEncode and generateDecode based on ioType
+            ioTypeStr = lower(strtrim(char(string(msg.ioType))));
+            switch ioTypeStr
+                case 'input'
+                    set_param(blockPath, 'generateEncode', 'off');
+                    set_param(blockPath, 'generateDecode', 'on');
+                case 'output'
+                    set_param(blockPath, 'generateEncode', 'on');
+                    set_param(blockPath, 'generateDecode', 'off');
+                case 'both'
+                    set_param(blockPath, 'generateEncode', 'on');
+                    set_param(blockPath, 'generateDecode', 'on');
+                otherwise
+                    warning('Unrecognized ioType "%s" for message "%s". Defaulting to "both".', string(msg.ioType), string(msg.msgName));
+                    set_param(blockPath, 'generateEncode', 'on');
+                    set_param(blockPath, 'generateDecode', 'on');
+            end
+
+            % 5. Set standard Mask parameters
+            set_param(blockPath, 'targetDir', sprintf("'%s'", targetDir));
+            set_param(blockPath, 'messageName', sprintf("'%s'", msg.msgName));
+
+            % 6. Set labelBase to OCTAL and combine digits (label1, label2, label3)
+            set_param(blockPath, 'labelBase', 'OCTAL');
+
+            l1 = strtrim(string(msg.label1));
+            l2 = strtrim(string(msg.label2));
+            l3 = strtrim(string(msg.label3));
+            labelValStr = char(l1 + l2 + l3);
+
+            set_param(blockPath, 'labelVal', labelValStr);
+
+            % 7. SDI parameter handling
+            if ~isempty(msg.sdiDefault) && ~strcmpi(char(string(msg.sdiDefault)), 'none')
+                set_param(blockPath, 'sdiPresent', 'on');
+                set_param(blockPath, 'sdiVal', upper(char(string(msg.sdiDefault))));
+            else
+                set_param(blockPath, 'sdiPresent', 'off');
+            end
+
+            % 8. SSM parameter handling
+            if ~isempty(msg.ssmDefault)
+                set_param(blockPath, 'normalSsm', upper(char(string(msg.ssmDefault))));
+            end
+
+            % 9. Process data cell array: Filter out padding fields starting with 'pad'
+            rawFields = msg.data;
+            rows = string.empty;
+
+            for j = 1:numel(rawFields)
+                f = rawFields{j};
+                fName = string(getValOrDefault(f, 'name', ''));
+
+                % Skip padding fields starting with 'pad' (case-insensitive)
+                if startsWith(lower(strtrim(fName)), 'pad')
+                    continue;
+                end
+
+                % Column 2: type (from dtype)
+                fType = string(getValOrDefault(f, 'dtype', ''));
+
+                % Column 3 & 4: startBitIndex & calculated endBitIndex (startBit + size - 1)
+                sbVal = str2double(string(getValOrDefault(f, 'startBit', 0)));
+                szVal = str2double(string(getValOrDefault(f, 'size', 0)));
+                if isnan(sbVal), sbVal = 0; end
+                if isnan(szVal), szVal = 0; end
+
+                startBitIndexStr = string(sbVal);
+                endBitIndexStr   = string(sbVal + szVal - 1);
+
+                % Column 5 & 6: dataMinValue & dataMaxValue
+                dataMinStr = string(getValOrDefault(f, 'min', ''));
+                dataMaxStr = string(getValOrDefault(f, 'max', ''));
+
+                % Column 7: resolution (ensure '.' decimal separator)
+                rawResStr = string(getValOrDefault(f, 'resolution', ''));
+                resolutionStr = strrep(rawResStr, ',', '.');
+
+                % Assemble row matching table layout
+                fieldVals = [ ...
+                    fName, ...
+                    fType, ...
+                    startBitIndexStr, ...
+                    endBitIndexStr, ...
+                    dataMinStr, ...
+                    dataMaxStr, ...
+                    resolutionStr ...
+                ];
+
+                % Format row string: "val1","val2","val3","val4","val5","val6","val7"
+                rows(end+1, 1) = '"' + join(fieldVals, '","') + '"'; %#ok<AGROW>
+            end
+
+            % 10. Set dataCount and dataPropertyTable parameters for used non-pad fields
+            usedDataCount = numel(rows);
+            if usedDataCount > 0
+                formattedTableStr = char("{" + join(rows, "; ") + "}");
+
+                maskObj = Simulink.Mask.get(blockPath);
+                if ~isempty(maskObj)
+                    dataCountObj = maskObj.getParameter('dataCount');
+                    if ~isempty(dataCountObj)
+                        dataCountObj.Value = num2str(usedDataCount);
+                    end
+
+                    tableObj = maskObj.getParameter('dataPropertyTable');
+                    if ~isempty(tableObj)
+                        tableObj.Value = formattedTableStr;
+                        tableObj.Visible = 'on';
+                    end
+                end
+            end
+        end
+
+        % 11. Run simulation to execute S-Function code generation
+        sim(modelName);
+
+        % Close temporary model without saving
+        bdclose(modelName);
+
+    catch ME
+        bdclose(modelName);
+        rethrow(ME);
+    end
+end
+
+function val = getValOrDefault(obj, fieldName, defaultVal)
+    if isstruct(obj) && isfield(obj, fieldName)
+        val = obj.(fieldName);
+    elseif isobject(obj) && isprop(obj, fieldName)
+        val = obj.(fieldName);
+    else
+        val = defaultVal;
+    end
+end
