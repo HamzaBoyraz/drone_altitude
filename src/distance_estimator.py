@@ -79,9 +79,9 @@ class SpatialEstimator:
         cx_vals = np.array([s["cx_px"] for s in samples], dtype=float)
         cy_vals = np.array([s["cy_px"] for s in samples], dtype=float)
         
-        real_x = np.array([s["real_x_mm"] for s in samples], dtype=float)
-        real_y = np.array([s["real_y_mm"] for s in samples], dtype=float)
-        real_z = np.array([s["real_z_mm"] for s in samples], dtype=float)
+        real_x = np.array([s["real_x"] for s in samples], dtype=float)
+        real_y = np.array([s["real_y"] for s in samples], dtype=float)
+        real_z = np.array([s["real_z"] for s in samples], dtype=float)
 
         # Build design matrices
         A_z, A_x, A_y = self._build_features(cx_vals, cy_vals, areas)
@@ -97,7 +97,7 @@ class SpatialEstimator:
         return True
 
     def predict(self, cx: float, cy: float, area: float) -> Optional[Dict[str, float]]:
-        """Predicts real 3D position (X, Y, Z) in mm for a detected contour."""
+        """Predicts real 3D position (X, Y, Z) for a detected contour."""
         if not self.is_fitted or area <= 0:
             return None
 
@@ -106,8 +106,8 @@ class SpatialEstimator:
         A_z, A_x, A_y = self._build_features(cx_arr, cy_arr, area_arr)
 
         # Matrix dot products
-        z_mm = float(np.dot(A_z[0], self.z_coeffs))
-        x_mm = float(np.dot(A_x[0], self.x_coeffs))
-        y_mm = float(np.dot(A_y[0], self.y_coeffs))
+        z = float(np.dot(A_z[0], self.z_coeffs))
+        x = float(np.dot(A_x[0], self.x_coeffs))
+        y = float(np.dot(A_y[0], self.y_coeffs))
 
-        return {"X_mm": x_mm, "Y_mm": y_mm, "Z_mm": z_mm}
+        return {"X": x, "Y": y, "Z": z}

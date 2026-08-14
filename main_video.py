@@ -66,15 +66,15 @@ def prompt_user_coordinates() -> tuple:
     """Prompts user in terminal for physical coordinates X, Y, Z."""
     print("\n------------------- RECORD CALIBRATION SAMPLE -------------------")
     print("Camera Coordinate Reference:")
-    print("  X = Horizontal offset (mm) [positive = Right, negative = Left]")
-    print("  Y = Vertical offset (mm)   [positive = Down,  negative = Up]")
-    print("  Z = Distance to camera lens (mm) [positive = Depth forward]")
+    print("  X = Horizontal offset [positive = Right, negative = Left]")
+    print("  Y = Vertical offset [positive = Down,  negative = Up]")
+    print("  Z = Distance to camera lens [positive = Depth forward]")
     print("-----------------------------------------------------------------")
     
     try:
-        x = float(input("Enter measured Real X offset (mm): "))
-        y = float(input("Enter measured Real Y offset (mm): "))
-        z = float(input("Enter measured Real Z distance (mm): "))
+        x = float(input("Enter measured Real X offset: "))
+        y = float(input("Enter measured Real Y offset: "))
+        z = float(input("Enter measured Real Z distance: "))
         return x, y, z
     except ValueError:
         print("[ERROR] Invalid numeric input! Sample discarded.")
@@ -247,7 +247,7 @@ class TrackerApp:
         lower_hsv, upper_hsv = self.get_hsv_values()
         self.update_color_visualizations(lower_hsv, upper_hsv)
 
-        binary_mask = filter_by_color(frame, lower_hsv, upper_hsv, use_morphology=True)
+        binary_mask = filter_by_color(frame, lower_hsv, upper_hsv, use_morphology=False)
         contour = extract_primary_contour(binary_mask, min_area=400.0)
 
         self.current_metrics = None
@@ -286,11 +286,11 @@ class TrackerApp:
         if contour is not None and self.current_metrics is not None:
             cx, cy = self.current_metrics["center"]
             if smoothed_3d:
-                filtered_text = f"Filtered: X={smoothed_3d['X_mm']:.0f} Y={smoothed_3d['Y_mm']:.0f} Z={smoothed_3d['Z_mm']:.0f} mm"
+                filtered_text = f"Filtered: X={smoothed_3d['X']:.0f} Y={smoothed_3d['Y']:.0f} Z={smoothed_3d['Z']:.0f}"
                 cv2.putText(frame, filtered_text, (cx + 10, cy + 5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2, cv2.LINE_AA)
                 if raw_pos_3d:
-                    raw_text = f"Raw: X={raw_pos_3d['X_mm']:.0f} Y={raw_pos_3d['Y_mm']:.0f} Z={raw_pos_3d['Z_mm']:.0f}"
+                    raw_text = f"Raw: X={raw_pos_3d['X']:.0f} Y={raw_pos_3d['Y']:.0f} Z={raw_pos_3d['Z']:.0f}"
                     cv2.putText(frame, raw_text, (cx + 10, cy + 22),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1, cv2.LINE_AA)
             else:

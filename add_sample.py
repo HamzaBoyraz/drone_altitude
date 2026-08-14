@@ -11,9 +11,9 @@ from src.detector import filter_by_color, extract_primary_contour, get_contour_m
 def main():
     parser = argparse.ArgumentParser(description="Extract object metrics from an image and add to calibration data.")
     parser.add_argument("image", type=str, help="Path to the calibration image file")
-    parser.add_argument("x", type=float, help="Real X offset in mm (positive = Right, negative = Left)")
-    parser.add_argument("y", type=float, help="Real Y offset in mm (positive = Down, negative = Up)")
-    parser.add_argument("z", type=float, help="Real Z distance from camera lens in mm")
+    parser.add_argument("x", type=float, help="Real X offset (positive = Right, negative = Left)")
+    parser.add_argument("y", type=float, help="Real Y offset (positive = Down, negative = Up)")
+    parser.add_argument("z", type=float, help="Real Z distance from camera lens")
     parser.add_argument("--json", type=str, default="calibration_data.json", help="Path to target JSON dataset file")
     
     args = parser.parse_args()
@@ -53,7 +53,6 @@ def main():
     cx, cy = metrics["center"]
     area = metrics["area_px"]
 
-    print(f"[DETECTION SUCCESS]")
     print(f"  -> Pixel Center: X={cx}, Y={cy}")
     print(f"  -> Pixel Area:   {area} px^2")
 
@@ -76,9 +75,9 @@ def main():
         "cx_px": float(cx),
         "cy_px": float(cy),
         "area_px": float(area),
-        "real_x_mm": float(args.x),
-        "real_y_mm": float(args.y),
-        "real_z_mm": float(args.z)
+        "real_x": float(args.x),
+        "real_y": float(args.y),
+        "real_z": float(args.z)
     }
 
     data.append(new_sample)
@@ -87,8 +86,7 @@ def main():
     with open(args.json, "w") as f:
         json.dump(data, f, indent=4)
 
-    print(f"[SAVED] Successfully added Sample ID {new_id} to '{args.json}'")
-    print(f"  -> Real Target: X={args.x} mm, Y={args.y} mm, Z={args.z} mm")
+    print(f"[SAVED] Successfully added Sample {new_id} to '{args.json}'")
 
 
 if __name__ == "__main__":

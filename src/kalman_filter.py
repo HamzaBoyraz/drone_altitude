@@ -47,7 +47,7 @@ class SpatialKalmanFilter:
     def update(self, pos_3d: Optional[Dict[str, float]]) -> Optional[Dict[str, float]]:
         """
         Runs Kalman Prediction and Correction step.
-        Returns smoothed (X, Y, Z) coordinates in mm.
+        Returns smoothed (X, Y, Z) coordinates in.
         """
         # 1. Prediction step
         prediction = self.kf.predict()
@@ -56,17 +56,17 @@ class SpatialKalmanFilter:
             # If target is missing, return uncorrected velocity prediction or reset
             if self.is_initialized:
                 return {
-                    "X_mm": float(prediction[0][0]),
-                    "Y_mm": float(prediction[1][0]),
-                    "Z_mm": float(prediction[2][0])
+                    "X": float(prediction[0][0]),
+                    "Y": float(prediction[1][0]),
+                    "Z": float(prediction[2][0])
                 }
             return None
 
         # Format measurement vector
         measurement = np.array([
-            [np.float32(pos_3d["X_mm"])],
-            [np.float32(pos_3d["Y_mm"])],
-            [np.float32(pos_3d["Z_mm"])]
+            [np.float32(pos_3d["X"])],
+            [np.float32(pos_3d["Y"])],
+            [np.float32(pos_3d["Z"])]
         ])
 
         if not self.is_initialized:
@@ -84,7 +84,7 @@ class SpatialKalmanFilter:
         corrected = self.kf.correct(measurement)
 
         return {
-            "X_mm": float(corrected[0][0]),
-            "Y_mm": float(corrected[1][0]),
-            "Z_mm": float(corrected[2][0])
+            "X": float(corrected[0][0]),
+            "Y": float(corrected[1][0]),
+            "Z": float(corrected[2][0])
         }

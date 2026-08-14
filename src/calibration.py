@@ -26,9 +26,9 @@ class CalibrationManager:
             "cx_px": float(cx_px),
             "cy_px": float(cy_px),
             "area_px": float(area_px),
-            "real_x_mm": float(real_x),
-            "real_y_mm": float(real_y),
-            "real_z_mm": float(real_z)
+            "real_x": float(real_x),
+            "real_y": float(real_y),
+            "real_z": float(real_z)
         }
         self.samples.append(sample)
         print(f"\n[CALIBRATION] Captured Sample #{sample['id']}: {sample}")
@@ -61,5 +61,5 @@ class CalibrationManager:
             print("  (No samples loaded)")
         for s in self.samples:
             print(f"  #{s['id']} | Pixel Center: ({s['cx_px']:.0f}, {s['cy_px']:.0f}) | Area: {s['area_px']:.0f} px "
-                  f"--> Real 3D (X, Y, Z): ({s['real_x_mm']:.1f}, {s['real_y_mm']:.1f}, {s['real_z_mm']:.1f}) mm")
+                  f"--> Real 3D (X, Y, Z): ({s['real_x']:.1f}, {s['real_y']:.1f}, {s['real_z']:.1f})")
         print("===========================================================================\n")

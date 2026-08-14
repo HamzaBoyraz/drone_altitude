@@ -23,27 +23,27 @@ def evaluate_calibration(calibration_file: str = "calibration_data.json"):
     print("\n======================= CALIBRATION ACCURACY EVALUATION =======================")
     print(f"Mode: {'NON-LINEAR (Distortion Compensated)' if estimator.use_distortion_terms else 'LINEAR'}")
     print(f"Total Calibration Points: {len(calib_mgr.samples)}\n")
-    print(f"{'ID':<4} | {'Target (X, Y, Z) mm':<24} | {'Predicted (X, Y, Z) mm':<24} | {'Absolute Error (mm)'}")
+    print(f"{'ID':<4} | {'Target (X, Y, Z)':<24} | {'Predicted (X, Y, Z)':<24} | {'Absolute Error'}")
     print("-" * 78)
 
     for sample in calib_mgr.samples:
         cx, cy, area = sample["cx_px"], sample["cy_px"], sample["area_px"]
-        real_x, real_y, real_z = sample["real_x_mm"], sample["real_y_mm"], sample["real_z_mm"]
+        real_x, real_y, real_z = sample["real_x"], sample["real_y"], sample["real_z"]
 
         pred = estimator.predict(cx, cy, area)
         if pred is None:
             continue
 
-        err_x = abs(pred["X_mm"] - real_x)
-        err_y = abs(pred["Y_mm"] - real_y)
-        err_z = abs(pred["Z_mm"] - real_z)
+        err_x = abs(pred["X"] - real_x)
+        err_y = abs(pred["Y"] - real_y)
+        err_z = abs(pred["Z"] - real_z)
 
         errors_x.append(err_x)
         errors_y.append(err_y)
         errors_z.append(err_z)
 
         target_str = f"({real_x:.1f}, {real_y:.1f}, {real_z:.1f})"
-        pred_str = f"({pred['X_mm']:.1f}, {pred['Y_mm']:.1f}, {pred['Z_mm']:.1f})"
+        pred_str = f"({pred['X']:.1f}, {pred['Y']:.1f}, {pred['Z']:.1f})"
         err_str = f"({err_x:.1f}, {err_y:.1f}, {err_z:.1f})"
 
         print(f"{sample['id']:<4} | {target_str:<24} | {pred_str:<24} | {err_str}")
@@ -56,8 +56,8 @@ def evaluate_calibration(calibration_file: str = "calibration_data.json"):
 
     print("-" * 78)
     print("SUMMARY ERROR METRICS:")
-    print(f"  • Mean Absolute Error (MAE):  X = {mae_x:.2f} mm | Y = {mae_y:.2f} mm | Z = {mae_z:.2f} mm")
-    print(f"  • Root Mean Sq Error (RMSE): X = {rmse_x:.2f} mm | Y = {rmse_y:.2f} mm | Z = {rmse_z:.2f} mm")
+    print(f"  • Mean Absolute Error (MAE):  X = {mae_x:.2f} | Y = {mae_y:.2f} | Z = {mae_z:.2f}")
+    print(f"  • Root Mean Sq Error (RMSE): X = {rmse_x:.2f} | Y = {rmse_y:.2f} | Z = {rmse_z:.2f}")
     print("===============================================================================\n")
 
 
