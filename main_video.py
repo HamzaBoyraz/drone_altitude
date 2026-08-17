@@ -9,10 +9,10 @@ from src.kalman_filter import SpatialKalmanFilter
 
 
 # ==================== USER CONFIGURABLE PARAMETERS ====================
-VIDEO_PATH = "videos/sari_kare.mp4"
+VIDEO_PATH = "videos/model_kare.mp4"
 
 # 1. Main Window Dimensions (Tkinter UI)
-WINDOW_WIDTH = 960
+WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 540
 
 # 2. Displayed Video Resolution (Right Panel sizing)
@@ -93,6 +93,17 @@ class TrackerApp:
         base_delay = int(1000 / fps) if fps > 0 else 30
         self.delay = max(1, int(base_delay * SPEED_MULTIPLIER))
 
+        # Play/Pause State Variable
+        self.is_playing = True
+
+        # Keep track of the last loaded/read raw frame for slider updates while paused
+        self.current_raw_frame = None
+
+        # Bind keyboard shortcuts
+        self.root.bind("<space>", self.toggle_play_pause)
+        self.root.bind("q", self.quit_app_event)
+        self.root.bind("Q", self.quit_app_event)
+
         # Backend Managers & Filters
         self.calib_mgr = CalibrationManager("calibration_data.json")
         self.estimator = SpatialEstimator(self.calib_mgr, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
@@ -129,6 +140,16 @@ class TrackerApp:
         self.create_widgets()
         self.update_video()
 
+    def toggle_play_pause(self, event=None):
+        """Toggles the video play/pause state when the space bar is pressed."""
+        self.is_playing = not self.is_playing
+        status = "PLAYING" if self.is_playing else "PAUSED"
+        print(f"[STATUS] Video {status}")
+
+    def quit_app_event(self, event=None):
+        """Wrapper event binder for quitting via 'q' or 'Q' key."""
+        self.quit_app()
+
     def _on_mousewheel(self, event):
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
@@ -162,7 +183,8 @@ class TrackerApp:
             frame = tk.Frame(self.left_frame, bg="#2b2b2b")
             frame.pack(fill=tk.X, padx=20, pady=4)
             tk.Label(frame, text=name, fg="white", bg="#2b2b2b", font=("Arial", 10)).pack(anchor="w")
-            scale = tk.Scale(frame, from_=mn, to=mx, orient=tk.HORIZONTAL, bg="#3c3f41", fg="white", highlightbackground="#2b2b2b")
+            # Connect command callback to re-process frame if paused
+            scale = tk.Scale(frame, from_=mn, to=mx, orient=tk.HORIZONTAL, bg="#3c3f41", fg="white", highlightbackground="#2b2b2b", command=self.on_slider_changed)
             scale.set(val)
             scale.pack(fill=tk.X)
             self.sliders[name] = scale
@@ -176,6 +198,11 @@ class TrackerApp:
         tk.Button(btn_frame, text="[E] Evaluate MAE Accuracy", bg="#708090", fg="white", font=("Arial", 10, "bold"), command=self.evaluate_data).pack(fill=tk.X, pady=4)
         tk.Button(btn_frame, text="[S] Save HSV to config.py", bg="#cd5c5c", fg="white", font=("Arial", 10, "bold"), command=self.save_hsv_config).pack(fill=tk.X, pady=4)
         tk.Button(btn_frame, text="[Q] Quit Application", bg="#b22222", fg="white", font=("Arial", 10, "bold"), command=self.quit_app).pack(fill=tk.X, pady=4)
+
+    def on_slider_changed(self, value):
+        """Triggers detection update immediately if the video is paused."""
+        if not self.is_playing and self.current_raw_frame is not None:
+            self.process_and_display_frame(self.current_raw_frame)
 
     def get_hsv_values(self):
         lower = np.array([self.sliders["H Min"].get(), self.sliders["S Min"].get(), self.sliders["V Min"].get()])
@@ -234,14 +261,8 @@ class TrackerApp:
         self.cap.release()
         self.root.destroy()
 
-    def update_video(self):
-        ret, raw_frame = self.cap.read()
-        if not ret:
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            self.kalman.reset()
-            self.root.after(self.delay, self.update_video)
-            return
-
+    def process_and_display_frame(self, raw_frame):
+        """Processes color filtering, contours, and tracking overlay on a frame and displays it."""
         frame = cv2.resize(raw_frame, (PROCESS_WIDTH, PROCESS_HEIGHT))
 
         lower_hsv, upper_hsv = self.get_hsv_values()
@@ -281,7 +302,11 @@ class TrackerApp:
                 cv2.putText(frame, f"Pixel: ({rel_x}, {rel_y}) | Area: {int(area)} px", (cx + 10, cy - 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
 
-        smoothed_3d = self.kalman.update(raw_pos_3d)
+        # Only update Kalman filter if video is playing normally to prevent filter jumping on static frame adjustment
+        if self.is_playing:
+            smoothed_3d = self.kalman.update(raw_pos_3d)
+        else:
+            smoothed_3d = self.kalman.update(raw_pos_3d) if raw_pos_3d else None
 
         if contour is not None and self.current_metrics is not None:
             cx, cy = self.current_metrics["center"]
@@ -307,6 +332,21 @@ class TrackerApp:
         _, encoded_image = cv2.imencode('.ppm', frame_resized)
         self.photo = tk.PhotoImage(data=encoded_image.tobytes())
         self.video_label.config(image=self.photo)
+
+    def update_video(self):
+        if not self.is_playing:
+            self.root.after(self.delay, self.update_video)
+            return
+
+        ret, raw_frame = self.cap.read()
+        if not ret:
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            self.kalman.reset()
+            self.root.after(self.delay, self.update_video)
+            return
+
+        self.current_raw_frame = raw_frame
+        self.process_and_display_frame(raw_frame)
 
         self.root.after(self.delay, self.update_video)
 
