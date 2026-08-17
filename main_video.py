@@ -12,7 +12,7 @@ from src.kalman_filter import SpatialKalmanFilter
 VIDEO_PATH = "videos/model_kare.mp4"
 
 # 1. Main Window Dimensions (Tkinter UI)
-WINDOW_WIDTH = 1000
+WINDOW_WIDTH = 960
 WINDOW_HEIGHT = 540
 
 # 2. Displayed Video Resolution (Right Panel sizing)
@@ -25,6 +25,9 @@ PROCESS_HEIGHT = 480
 
 # 4. Playback Speed Multiplier (1.0 = Normal FPS, < 1.0 = Faster, > 1.0 = Slower)
 SPEED_MULTIPLIER = 1
+
+# 5. Display Options
+SHOW_FILTERED_VALUES = False  # Set to True to show Kalman-filtered values alongside raw values
 # ======================================================================
 
 
@@ -183,7 +186,6 @@ class TrackerApp:
             frame = tk.Frame(self.left_frame, bg="#2b2b2b")
             frame.pack(fill=tk.X, padx=20, pady=4)
             tk.Label(frame, text=name, fg="white", bg="#2b2b2b", font=("Arial", 10)).pack(anchor="w")
-            # Connect command callback to re-process frame if paused
             scale = tk.Scale(frame, from_=mn, to=mx, orient=tk.HORIZONTAL, bg="#3c3f41", fg="white", highlightbackground="#2b2b2b", command=self.on_slider_changed)
             scale.set(val)
             scale.pack(fill=tk.X)
@@ -194,9 +196,7 @@ class TrackerApp:
         btn_frame.pack(fill=tk.X, padx=20, pady=15)
 
         tk.Button(btn_frame, text="[C] Capture Sample", bg="#2e8b57", fg="white", font=("Arial", 10, "bold"), command=self.capture_sample).pack(fill=tk.X, pady=4)
-        tk.Button(btn_frame, text="[L] Reload Dataset", bg="#4682b4", fg="white", font=("Arial", 10, "bold"), command=self.reload_data).pack(fill=tk.X, pady=4)
-        tk.Button(btn_frame, text="[E] Evaluate MAE Accuracy", bg="#708090", fg="white", font=("Arial", 10, "bold"), command=self.evaluate_data).pack(fill=tk.X, pady=4)
-        tk.Button(btn_frame, text="[S] Save HSV to config.py", bg="#cd5c5c", fg="white", font=("Arial", 10, "bold"), command=self.save_hsv_config).pack(fill=tk.X, pady=4)
+        tk.Button(btn_frame, text="[F] Load JSON & Fit Estimator", bg="#708090", fg="white", font=("Arial", 10, "bold"), command=self.load_and_fit_estimator).pack(fill=tk.X, pady=4)
         tk.Button(btn_frame, text="[Q] Quit Application", bg="#b22222", fg="white", font=("Arial", 10, "bold"), command=self.quit_app).pack(fill=tk.X, pady=4)
 
     def on_slider_changed(self, value):
@@ -236,23 +236,15 @@ class TrackerApp:
         else:
             print("\n[WARNING] No valid object contour detected to sample! Position object and try again.")
 
-    def reload_data(self):
+    def load_and_fit_estimator(self):
+        """Reads calibration_data.json and fits the estimator function."""
         self.calib_mgr.load_data()
-        self.calib_mgr.print_summary()
-        self.estimator.fit()
+        success = self.estimator.fit()
         self.kalman.reset()
-
-    def evaluate_data(self):
-        try:
-            from evaluate import evaluate_calibration
-            evaluate_calibration("calibration_data.json")
-        except ImportError:
-            print("[ERROR] 'evaluate.py' module not found in root directory!")
-
-    def save_hsv_config(self):
-        lower, upper = self.get_hsv_values()
-        save_config(lower, upper)
-        print(f"[CONFIG SAVED] Lower: {lower}, Upper: {upper}")
+        if success:
+            print("[INFO] Successfully read calibration_data.json and fitted estimator function.")
+        else:
+            print("[WARNING] Not enough samples in JSON file to fit estimator (needs >= 2 points).")
 
     def quit_app(self):
         lower, upper = self.get_hsv_values()
@@ -299,10 +291,18 @@ class TrackerApp:
                 rel_x = cx - center_x
                 rel_y = cy - center_y
 
-                cv2.putText(frame, f"Pixel: ({rel_x}, {rel_y}) | Area: {int(area)} px", (cx + 10, cy - 20),
+                pixel_text = f"Pixel: ({rel_x}, {rel_y}) | Area: {int(area)} px"
+                (p_w, p_h), _ = cv2.getTextSize(pixel_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                
+                # Dynamic boundary checking to prevent text clipping off right/top screen
+                p_text_x = cx + 10
+                if p_text_x + p_w > PROCESS_WIDTH - 10:
+                    p_text_x = cx - p_w - 10
+                p_text_y = max(cy - 20, p_h + 10)
+
+                cv2.putText(frame, pixel_text, (p_text_x, p_text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
 
-        # Only update Kalman filter if video is playing normally to prevent filter jumping on static frame adjustment
         if self.is_playing:
             smoothed_3d = self.kalman.update(raw_pos_3d)
         else:
@@ -310,16 +310,40 @@ class TrackerApp:
 
         if contour is not None and self.current_metrics is not None:
             cx, cy = self.current_metrics["center"]
-            if smoothed_3d:
-                filtered_text = f"Filtered: X={smoothed_3d['X']:.0f} Y={smoothed_3d['Y']:.0f} Z={smoothed_3d['Z']:.0f}"
-                cv2.putText(frame, filtered_text, (cx + 10, cy + 5),
+            if SHOW_FILTERED_VALUES and smoothed_3d:
+                filtered_text = f"Filtered: X={smoothed_3d['X']:.3f} Y={smoothed_3d['Y']:.3f} Z={smoothed_3d['Z']:.3f}"
+                (f_w, f_h), _ = cv2.getTextSize(filtered_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+                
+                f_text_x = cx + 10
+                if f_text_x + f_w > PROCESS_WIDTH - 10:
+                    f_text_x = cx - f_w - 10
+                f_text_y = cy + 5
+
+                cv2.putText(frame, filtered_text, (f_text_x, f_text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2, cv2.LINE_AA)
                 if raw_pos_3d:
-                    raw_text = f"Raw: X={raw_pos_3d['X']:.0f} Y={raw_pos_3d['Y']:.0f} Z={raw_pos_3d['Z']:.0f}"
-                    cv2.putText(frame, raw_text, (cx + 10, cy + 22),
+                    raw_text = f"Raw: X={raw_pos_3d['X']:.3f} Y={raw_pos_3d['Y']:.3f} Z={raw_pos_3d['Z']:.3f}"
+                    cv2.putText(frame, raw_text, (f_text_x, f_text_y + 18),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1, cv2.LINE_AA)
+            elif raw_pos_3d:
+                raw_text = f"Raw: X={raw_pos_3d['X']:.3f} Y={raw_pos_3d['Y']:.3f} Z={raw_pos_3d['Z']:.3f}"
+                (r_w, r_h), _ = cv2.getTextSize(raw_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+                
+                r_text_x = cx + 10
+                if r_text_x + r_w > PROCESS_WIDTH - 10:
+                    r_text_x = cx - r_w - 10
+                r_text_y = min(cy + 25, PROCESS_HEIGHT - 10)
+
+                cv2.putText(frame, raw_text, (r_text_x, r_text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 2, cv2.LINE_AA)
             else:
-                cv2.putText(frame, "3D Pos: Need Calib [C] >= 2 points", (cx + 10, cy + 5),
+                warn_text = "3D Pos: Need Calib [C] >= 2 pts"
+                (w_w, _), _ = cv2.getTextSize(warn_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+                w_text_x = cx + 10
+                if w_text_x + w_w > PROCESS_WIDTH - 10:
+                    w_text_x = cx - w_w - 10
+
+                cv2.putText(frame, warn_text, (w_text_x, cy + 5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
 
         draw_axis_legend(frame)
