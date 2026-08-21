@@ -3,7 +3,7 @@ import os
 from typing import List, Dict, Optional
 
 
-class CalibrationManager:
+class DataPointsManager:
     """Manages recording, loading, and saving calibration sample pairs (Pixel Metrics -> Real 3D Coordinates)."""
 
     def __init__(self, filepath: str = "calibration_data.json"):
@@ -52,7 +52,7 @@ class CalibrationManager:
                 self.samples = []
         else:
             self.samples = []
-            print(f"[CALIBRATION] No existing file found at '{self.filepath}'. Starting fresh.")
+            print(f"[CALIBRATION] No existing file found at '{self.filepath}'.")
 
     def print_summary(self) -> None:
         """Displays currently loaded dataset summary in terminal."""

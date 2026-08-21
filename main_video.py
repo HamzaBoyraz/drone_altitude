@@ -2,10 +2,9 @@ import cv2
 import numpy as np
 import tkinter as tk
 import config
-from src.detector import filter_by_color, extract_primary_contour, get_contour_metrics
-from src.calibration import CalibrationManager
+from src.objectDetector import filter_by_color, extract_primary_contour, get_contour_metrics
+from src.dataPointsManager import DataPointsManager
 from src.distance_estimator import SpatialEstimator
-from src.kalman_filter import SpatialKalmanFilter
 
 
 # ==================== USER CONFIGURABLE PARAMETERS ====================
@@ -25,9 +24,6 @@ PROCESS_HEIGHT = 480
 
 # 4. Playback Speed Multiplier (1.0 = Normal FPS, < 1.0 = Faster, > 1.0 = Slower)
 SPEED_MULTIPLIER = 1
-
-# 5. Display Options
-SHOW_FILTERED_VALUES = False  # Set to True to show Kalman-filtered values alongside raw values
 # ======================================================================
 
 
@@ -67,13 +63,6 @@ def draw_axis_legend(frame: np.ndarray):
 
 def prompt_user_coordinates() -> tuple:
     """Prompts user in terminal for physical coordinates X, Y, Z."""
-    print("\n------------------- RECORD CALIBRATION SAMPLE -------------------")
-    print("Camera Coordinate Reference:")
-    print("  X = Horizontal offset [positive = Right, negative = Left]")
-    print("  Y = Vertical offset [positive = Down,  negative = Up]")
-    print("  Z = Distance to camera lens [positive = Depth forward]")
-    print("-----------------------------------------------------------------")
-    
     try:
         x = float(input("Enter measured Real X offset: "))
         y = float(input("Enter measured Real Y offset: "))
@@ -108,9 +97,8 @@ class TrackerApp:
         self.root.bind("Q", self.quit_app_event)
 
         # Backend Managers & Filters
-        self.calib_mgr = CalibrationManager("calibration_data.json")
+        self.calib_mgr = DataPointsManager("calibration_data.json")
         self.estimator = SpatialEstimator(self.calib_mgr, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
-        self.kalman = SpatialKalmanFilter(dt=0.033)
 
         self.current_metrics = None
         self.photo = None
@@ -147,7 +135,6 @@ class TrackerApp:
         """Toggles the video play/pause state when the space bar is pressed."""
         self.is_playing = not self.is_playing
         status = "PLAYING" if self.is_playing else "PAUSED"
-        print(f"[STATUS] Video {status}")
 
     def quit_app_event(self, event=None):
         """Wrapper event binder for quitting via 'q' or 'Q' key."""
@@ -231,8 +218,6 @@ class TrackerApp:
                 area = self.current_metrics["area_px"]
                 self.calib_mgr.add_sample(cx, cy, area, rx, ry, rz)
                 self.calib_mgr.save_data()
-                self.estimator.fit()
-                self.kalman.reset()
         else:
             print("\n[WARNING] No valid object contour detected to sample! Position object and try again.")
 
@@ -240,11 +225,8 @@ class TrackerApp:
         """Reads calibration_data.json and fits the estimator function."""
         self.calib_mgr.load_data()
         success = self.estimator.fit()
-        self.kalman.reset()
         if success:
-            print("[INFO] Successfully read calibration_data.json and fitted estimator function.")
-        else:
-            print("[WARNING] Not enough samples in JSON file to fit estimator (needs >= 2 points).")
+            print("Fitted estimator function.")
 
     def quit_app(self):
         lower, upper = self.get_hsv_values()
@@ -260,7 +242,8 @@ class TrackerApp:
         lower_hsv, upper_hsv = self.get_hsv_values()
         self.update_color_visualizations(lower_hsv, upper_hsv)
 
-        binary_mask = filter_by_color(frame, lower_hsv, upper_hsv, use_morphology=False)
+        binary_mask = filter_by_color(frame, lower_hsv, upper_hsv)
+        # minimum area in pixels for detected contour to be valid
         contour = extract_primary_contour(binary_mask, min_area=400.0)
 
         self.current_metrics = None
@@ -282,8 +265,6 @@ class TrackerApp:
                 scaled_cx = cx * scale_x
                 scaled_cy = cy * scale_y
                 scaled_area = area * (scale_x * scale_y)
-
-                raw_pos_3d = self.estimator.predict(scaled_cx, scaled_cy, scaled_area)
                 
                 # Center-relative pixel coordinates calculation (Origin at video center)
                 center_x = PROCESS_WIDTH // 2
@@ -303,52 +284,23 @@ class TrackerApp:
                 cv2.putText(frame, pixel_text, (p_text_x, p_text_y),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 255), 1, cv2.LINE_AA)
 
-        if self.is_playing:
-            smoothed_3d = self.kalman.update(raw_pos_3d)
-        else:
-            smoothed_3d = self.kalman.update(raw_pos_3d) if raw_pos_3d else None
-
-        if contour is not None and self.current_metrics is not None:
+        if contour is not None and self.current_metrics is not None and self.estimator.is_fitted:
+            raw_pos_3d = self.estimator.predict(scaled_cx, scaled_cy, scaled_area)
             cx, cy = self.current_metrics["center"]
-            if SHOW_FILTERED_VALUES and smoothed_3d:
-                filtered_text = f"Filtered: X={smoothed_3d['X']:.3f} Y={smoothed_3d['Y']:.3f} Z={smoothed_3d['Z']:.3f}"
-                (f_w, f_h), _ = cv2.getTextSize(filtered_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-                
-                f_text_x = cx + 10
-                if f_text_x + f_w > PROCESS_WIDTH - 10:
-                    f_text_x = cx - f_w - 10
-                f_text_y = cy + 5
+            raw_text = f"Raw: X={raw_pos_3d['X']:.3f} Y={raw_pos_3d['Y']:.3f} Z={raw_pos_3d['Z']:.3f}"
+            (r_w, r_h), _ = cv2.getTextSize(raw_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            
+            r_text_x = cx + 10
+            if r_text_x + r_w > PROCESS_WIDTH - 10:
+                r_text_x = cx - r_w - 10
+            r_text_y = min(cy + 25, PROCESS_HEIGHT - 10)
 
-                cv2.putText(frame, filtered_text, (f_text_x, f_text_y),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2, cv2.LINE_AA)
-                if raw_pos_3d:
-                    raw_text = f"Raw: X={raw_pos_3d['X']:.3f} Y={raw_pos_3d['Y']:.3f} Z={raw_pos_3d['Z']:.3f}"
-                    cv2.putText(frame, raw_text, (f_text_x, f_text_y + 18),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1, cv2.LINE_AA)
-            elif raw_pos_3d:
-                raw_text = f"Raw: X={raw_pos_3d['X']:.3f} Y={raw_pos_3d['Y']:.3f} Z={raw_pos_3d['Z']:.3f}"
-                (r_w, r_h), _ = cv2.getTextSize(raw_text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
-                
-                r_text_x = cx + 10
-                if r_text_x + r_w > PROCESS_WIDTH - 10:
-                    r_text_x = cx - r_w - 10
-                r_text_y = min(cy + 25, PROCESS_HEIGHT - 10)
-
-                cv2.putText(frame, raw_text, (r_text_x, r_text_y),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 2, cv2.LINE_AA)
-            else:
-                warn_text = "3D Pos: Need Calib [C] >= 2 pts"
-                (w_w, _), _ = cv2.getTextSize(warn_text, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
-                w_text_x = cx + 10
-                if w_text_x + w_w > PROCESS_WIDTH - 10:
-                    w_text_x = cx - w_w - 10
-
-                cv2.putText(frame, warn_text, (w_text_x, cy + 5),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
+            cv2.putText(frame, raw_text, (r_text_x, r_text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 2, cv2.LINE_AA)
 
         draw_axis_legend(frame)
 
-        mode_str = "NON-LINEAR" if self.estimator.use_distortion_terms else ("LINEAR" if self.estimator.is_fitted else "UNFITTED")
+        mode_str = "FITTED" if self.estimator.is_fitted else "UNFITTED"
         cv2.putText(frame, f"Calib Status: {mode_str} ({len(self.calib_mgr.samples)} pts)", 
                     (10, frame.shape[0] - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 255, 0), 1, cv2.LINE_AA)
 
@@ -365,7 +317,6 @@ class TrackerApp:
         ret, raw_frame = self.cap.read()
         if not ret:
             self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            self.kalman.reset()
             self.root.after(self.delay, self.update_video)
             return
 

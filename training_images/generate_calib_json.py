@@ -5,8 +5,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import cv2
 import numpy as np
 from config import FRAME_WIDTH, FRAME_HEIGHT, LOWER_HSV, UPPER_HSV
-from src.detector import filter_by_color, extract_primary_contour, get_contour_metrics
+from objectDetector import filter_by_color, extract_primary_contour, get_contour_metrics
 
+"""
+Writes into the json file that the data for calibration held. Runs from the command line.
+"""
+
+image_name = "Untitled"
 
 def generate_calibration_dataset(
     images_dir: str = "training_images",
@@ -28,7 +33,7 @@ def generate_calibration_dataset(
 
     for item in real_coords_list:
         sample_id = item["id"]
-        img_filename = f"Untitled{sample_id}.png"
+        img_filename = f"{image_name}{sample_id}.png"
         img_path = os.path.join(images_dir, img_filename)
 
         if not os.path.exists(img_path):
@@ -36,28 +41,18 @@ def generate_calibration_dataset(
             continue
 
         image = cv2.imread(img_path)
-        if image is None:
-            print(f"  [WARNING] Failed to load image: {img_path}. Skipping.")
-            continue
 
-        # Optional: Resize image if it doesn't match config dimensions
+        # Resize image if it doesn't match config dimensions
         if image.shape[1] != FRAME_WIDTH or image.shape[0] != FRAME_HEIGHT:
             image = cv2.resize(image, (FRAME_WIDTH, FRAME_HEIGHT))
 
         # 1. Apply color filter using config HSV thresholds
         binary_mask = filter_by_color(image, LOWER_HSV, UPPER_HSV)
-
-        # 2. Extract primary contour using detector logic
         contour = extract_primary_contour(binary_mask)
         if contour is None:
             print(f"  [WARNING] No valid contour found in {img_filename}. Skipping.")
             continue
-
-        # 3. Compute contour metrics (pixel center and area)
         metrics = get_contour_metrics(contour)
-        if metrics is None:
-            print(f"  [WARNING] Could not compute metrics for {img_filename}. Skipping.")
-            continue
 
         cx, cy = metrics["center"]
         area_px = metrics["area_px"]
@@ -79,7 +74,7 @@ def generate_calibration_dataset(
     with open(output_path, "w") as f:
         json.dump(calibration_samples, f, indent=4)
 
-    print(f"\n[COMPLETE] Successfully generated '{output_path}' with {len(calibration_samples)} valid sample(s).\n")
+    print(f"\n[COMPLETE] Successfully generated '{output_path}' with {len(calibration_samples)} valid samples.\n")
 
 
 if __name__ == "__main__":

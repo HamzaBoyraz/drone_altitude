@@ -5,10 +5,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import cv2
 import numpy as np
 from config import FRAME_WIDTH, FRAME_HEIGHT, LOWER_HSV, UPPER_HSV
-from src.detector import filter_by_color, extract_primary_contour, get_contour_metrics
-from src.calibration import CalibrationManager
+from objectDetector import filter_by_color, extract_primary_contour, get_contour_metrics
+from dataPointsManager import DataPointsManager
 from src.distance_estimator import SpatialEstimator
 
+"""
+Script for evaluating the fitted function in given dataset.
+Runs from the command line.
+
+"""
 
 def evaluate_model(
     test_images_dir: str = "test_images",
@@ -21,13 +26,9 @@ def evaluate_model(
     if not os.path.exists(test_images_dir):
         raise FileNotFoundError(f"Could not find test images directory at: {test_images_dir}")
 
-    # 1. Initialize Calibration Manager and fit SpatialEstimator with frame size matching config
-    calib_mgr = CalibrationManager(filepath=calibration_path)
+    # 1. Initialize Calibration Manager and fit SpatialEstimator with config
+    calib_mgr = DataPointsManager(filepath=calibration_path)
     estimator = SpatialEstimator(calibration_mgr=calib_mgr, frame_size=(FRAME_WIDTH, FRAME_HEIGHT))
-    
-    if not estimator.fit():
-        print(f"[ERROR] Failed to fit SpatialEstimator. Ensure '{calibration_path}' contains valid samples.")
-        return
 
     # 2. Load test ground truth coordinates
     with open(test_json_path, "r") as f:
@@ -55,9 +56,6 @@ def evaluate_model(
             continue
 
         image = cv2.imread(img_path)
-        if image is None:
-            print(f"#{sample_id:<3} | [WARNING] Failed to load image: {img_path}")
-            continue
 
         if image.shape[1] != FRAME_WIDTH or image.shape[0] != FRAME_HEIGHT:
             image = cv2.resize(image, (FRAME_WIDTH, FRAME_HEIGHT))
@@ -66,23 +64,18 @@ def evaluate_model(
         # 3. Run detection pipeline (compatible with src/detector.py signature)
         binary_mask = filter_by_color(image, LOWER_HSV, UPPER_HSV)
         contour = extract_primary_contour(binary_mask)
-        
         if contour is None:
             print(f"#{sample_id:<3} | [WARNING] No valid contour detected.")
             continue
-
         metrics = get_contour_metrics(contour)
-        if metrics is None:
-            print(f"#{sample_id:<3} | [WARNING] Could not extract contour metrics.")
-            continue
 
         cx, cy = metrics["center"]
         area_px = metrics["area_px"]
 
-        # 4. Predict real-world coordinates using SpatialEstimator.predict()
+        # 4. Predict coordinates using SpatialEstimator.predict()
         pred = estimator.predict(float(cx), float(cy), float(area_px))
         if pred is None:
-            print(f"#{sample_id:<3} | [WARNING] Prediction failed (estimator not fitted or area <= 0).")
+            print(f"#{sample_id:<3} | [WARNING] Prediction failed. Skipping test item.")
             continue
 
         real_x = float(item["real_x"])
@@ -109,7 +102,7 @@ def evaluate_model(
 
         print(f"#{sample_id:<3} | {real_str:<22} | {pred_str:<22} | {err_str:<22} | {dist_err:.2f}m")
 
-    print("-" * 96)
+    print("-" * 30)
 
     # 5. Generate Performance Summary
     if successful_evals > 0:

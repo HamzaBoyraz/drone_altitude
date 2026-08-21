@@ -3,13 +3,14 @@ import numpy as np
 import math
 from typing import Dict, Optional
 
+"""
+Functions for detecting object by color filtering, extracting contour and calculating the metrics
+"""
 
 def filter_by_color(
     image: np.ndarray, 
     lower_hsv: np.ndarray, 
     upper_hsv: np.ndarray,
-    use_morphology: bool = True,
-    kernel_size: int = 5
 ) -> np.ndarray:
     """
     Converts BGR to HSV and applies thresholding.
@@ -19,18 +20,12 @@ def filter_by_color(
     hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv_image, lower_hsv, upper_hsv)
 
-    if use_morphology and kernel_size > 0:
-        # Use MORPH_ELLIPSE for circular structuring element instead of square np.ones()
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
     return mask
 
 
 def extract_primary_contour(
     binary_mask: np.ndarray, 
-    min_area: float = 300.0
+    min_area: float = 400.0
 ) -> Optional[np.ndarray]:
     """
     Detects contours using CHAIN_APPROX_NONE to preserve every exact perimeter point
